@@ -18,6 +18,7 @@ option(NANOGUI_BUILD_EXAMPLE "Build NanoGUI example application?" ON)
 option(NANOGUI_BUILD_SHARED  "Build NanoGUI as a shared library?" ON)
 option(NANOGUI_BUILD_PYTHON  "Build a Python plugin for NanoGUI?" ON)
 option(NANOGUI_USE_GLAD      "Build a Python plugin for NanoGUI?" ${NANOGUI_USE_GLAD_DEFAULT})
+option(NANOGUI_USE_GLFW      "Build NanoGUI with provided GLFW?" ON)
 
 set(NANOGUI_PYTHON_VERSION "" CACHE STRING "Python version to use for compiling the Python plugin")
 
@@ -44,20 +45,30 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 string(TOUPPER "${CMAKE_BUILD_TYPE}" U_CMAKE_BUILD_TYPE)
 
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL " " FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL " " FORCE)
-set(GLFW_BUILD_DOCS OFF CACHE BOOL " " FORCE)
-set(GLFW_BUILD_INSTALL OFF CACHE BOOL " " FORCE)
-set(GLFW_INSTALL OFF CACHE BOOL " " FORCE)
 set(BUILD_SHARED_LIBS ${NANOGUI_BUILD_SHARED} CACHE BOOL " " FORCE)
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  # Quench annoying deprecation warnings when compiling GLFW on OSX
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
-endif()
+if (NANOGUI_USE_GLFW)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL " " FORCE)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL " " FORCE)
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL " " FORCE)
+    set(GLFW_BUILD_INSTALL OFF CACHE BOOL " " FORCE)
+    set(GLFW_INSTALL OFF CACHE BOOL " " FORCE)
 
-# Compile GLFW
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/ext/glfw" "ext_build/glfw")
+    list(APPEND NANOGUI_EXTRA_DEFS -DNANOGUI_GLFW)
+
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      # Quench annoying deprecation warnings when compiling GLFW on OSX
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
+    endif()
+
+    set(GLFW_INCLUDE_DIR "ext/glfw/include")
+    # set(GLFW_LIBRARY "glfw" CACHE STRING " " FORCE)
+    # Compile GLFW
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/ext/glfw" "ext_build/glfw")
+    list(APPEND NANOGUI_EXTRA_INCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/${GLFW_INCLUDE_DIR}"
+    )
+endif()
 
 # Python support: add NANOGUI_PYTHON flag to all targets
 if (NANOGUI_BUILD_PYTHON)
@@ -125,7 +136,6 @@ endif()
 
 list(APPEND NANOGUI_EXTRA_INCS
   "${CMAKE_CURRENT_SOURCE_DIR}/ext/eigen"
-  "${CMAKE_CURRENT_SOURCE_DIR}/ext/glfw/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanovg/src"
 )
 
@@ -143,7 +153,7 @@ elseif(CMAKE_SYSTEM MATCHES "Linux")
   list(APPEND NANOGUI_EXTRA_LIBS GL Xxf86vm Xrandr Xinerama Xcursor Xi X11 pthread dl rt)
 endif()
 
-include_directories(ext/eigen ext/glfw/include ext/nanovg/src include ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(ext/eigen ${GLFW_INCLUDE_DIR} ext/nanovg/src include ${CMAKE_CURRENT_BINARY_DIR})
 
 # Run simple C converter to put font files into the data segment
 add_executable(bin2c resources/bin2c.c)
@@ -255,7 +265,7 @@ elseif (MSVC AND NANOGUI_BUILD_SHARED)
   set_property(TARGET nanogui APPEND_STRING PROPERTY LINK_FLAGS_RELWITHDEBINFO "/LTCG ")
 endif()
 
-if (NANOGUI_BUILD_SHARED)
+if (NANOGUI_USE_GLFW AND NANOGUI_BUILD_SHARED)
   # When GLFW is merged into the NanoGUI library, this flag must be specified
   set_property(TARGET nanogui APPEND PROPERTY COMPILE_DEFINITIONS "_GLFW_BUILD_DLL")
 endif()
@@ -308,7 +318,9 @@ endif()
 if (NANOGUI_BUILD_PYTHON)
   # Need PIC code in libnanogui even when compiled as a static library
   set_target_properties(nanogui PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  set_target_properties(glfw_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  if (NANOGUI_USE_GLFW)
+      set_target_properties(glfw_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endif()
 
   include_directories("ext/pybind11/include" ${PYTHON_INCLUDE_DIR})
   add_library(nanogui_python SHARED python/python.cpp python/python.h python/py_doc.h
@@ -381,7 +393,7 @@ else()
   # Create documentation for python plugin (optional target for developers)
   add_custom_target(mkdoc COMMAND
     python3 ${CMAKE_CURRENT_SOURCE_DIR}/ext/pybind11/tools/mkdoc.py
-    -Iinclude -Iext/nanovg/src -Iext/eigen -Iext/glfw/include
+    -Iinclude -Iext/nanovg/src -Iext/eigen -I${GLFW_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include/nanogui/*.h > ${CMAKE_CURRENT_SOURCE_DIR}/python/py_doc.h)
 endif()
 
